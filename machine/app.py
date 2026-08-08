@@ -165,8 +165,7 @@ def create_world():
 
         # Replace default port assignments with the allocated port
         props = re.sub(r'server-port=\d+', f'server-port={allocated_port}', props)
-        props = re.sub(r'server-portv6=\d+', f'server-portv6={allocated_port}', props)
-
+        props = re.sub(r'server-portv6=\d+', f'server-portv6={allocated_port + 1000}', props)
         # Bedrock forces default ports if LAN visibility is true, so we MUST disable it
         props = re.sub(r'enable-lan-visibility=true', 'enable-lan-visibility=false', props)
         props = re.sub(r'server-name=.*', f'server-name={world_name}', props)
