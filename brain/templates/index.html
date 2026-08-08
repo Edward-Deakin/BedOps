@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BedOps</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/basecoat-css@1.0.2/dist/basecoat.cdn.min.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/basecoat-css@1.0.2/dist/js/all.min.js" defer></script>
+    <script src="{{ url_for('static', filename='index/logic.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='index/global.css') }}">
+</head>
+<body>
+<div class="minecraft-card">
+    <div class="inner-panel">
+        <h1 class="bedops-logo">BedOps</h1>
+        <p class="text-center">A free to use, stateless Minecraft Bedrock host.<br/><br/>Your world is downloadable at the end of the session so you can upload for the next - we never store it for you as its cheaper.<br/><br/></p>
+        <button class="mc-button" id="new_world">New World</button>
+        <button class="mc-button" id="manage_world">Manage World</button>
+        <button class="mc-button" id="upload_world">Upload World</button>
+        <p class="text-center" style="margin-top:20px;">This is my submission for the <a style="color: lightblue" href="https://www.wemakedevs.org/hackathons/zerops" target="_blank_">Zerops Challenge</a>.<br/>
+        Fully open-source at <a style="color: lightblue;" href="https://github.com/Edward-Deakin/Bedops" target="_blank_">Edward-Deakin/Bedops</a>.<br/><br/>
+            Running on <a style="color: lightblue;" target="_blank" href="https://zerops.io">Zerops</a> (Project ID ZeHQArMiS1iWuGBqaETMhA).<br/><br/>
+            Edward Deakin 2026 🎉</a></p>
+    </div>
+</div>
+</body>
+</html>

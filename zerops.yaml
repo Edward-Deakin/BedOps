@@ -1,0 +1,467 @@
+zerops:
+  # This file allows for the deployment of BedOps to Zerops.
+  # It is built to run as a monorepo which makes it easier for judgement.
+  #
+  # These will all link to <worldname>.bedops.edwarddeakin.uk:<port> via bouncer which will relay this to machine.
+
+  # BRAIN
+  - setup: brain
+    build:
+      base: ubuntu/python@3.11
+      buildCommands:
+        # The following commands build up the dependencies required for the brain
+        - cd brain
+        - pip install -r requirements.txt
+      deployFiles: ./brain
+    run:
+      base: ubuntu/python@3.11
+      ports:
+        - port: 5002
+          httpSupport: true
+      envVariables:
+        WORKER_URL: http://machine:5001
+        DB_HOST: ${db_hostname}
+        DB_USER: ${db_user}
+        DB_PASSWORD: ${db_password}
+      start: cd brain && gunicorn app:app -b 0.0.0.0:5002
+
+  # MACHINE
+  - setup: machine
+    build:
+      base: ubuntu@latest
+      buildCommands:
+        # The following commands build up the dependencies required for the machine
+        - cd machine
+        - pip install -r requirements.txt
+      deployFiles: ./machine
+    run:
+      base: ubuntu@latest
+      ports:
+        - port: 5001
+          httpSupport: true
+        # UDP pool: one bedrock_server process binds per active world on one of
+        # these ports. Reachable internally by `proxy` at machine:<port>.
+        - port: 19132
+          protocol: udp
+        - port: 19133
+          protocol: udp
+        - port: 19134
+          protocol: udp
+        - port: 19135
+          protocol: udp
+        - port: 19136
+          protocol: udp
+        - port: 19137
+          protocol: udp
+        - port: 19138
+          protocol: udp
+        - port: 19139
+          protocol: udp
+        - port: 19140
+          protocol: udp
+        - port: 19141
+          protocol: udp
+        - port: 19142
+          protocol: udp
+        - port: 19143
+          protocol: udp
+        - port: 19144
+          protocol: udp
+        - port: 19145
+          protocol: udp
+        - port: 19146
+          protocol: udp
+        - port: 19147
+          protocol: udp
+        - port: 19148
+          protocol: udp
+        - port: 19149
+          protocol: udp
+        - port: 19150
+          protocol: udp
+        - port: 19151
+          protocol: udp
+        - port: 19152
+          protocol: udp
+        - port: 19153
+          protocol: udp
+        - port: 19154
+          protocol: udp
+        - port: 19155
+          protocol: udp
+        - port: 19156
+          protocol: udp
+        - port: 19157
+          protocol: udp
+        - port: 19158
+          protocol: udp
+        - port: 19159
+          protocol: udp
+        - port: 19160
+          protocol: udp
+        - port: 19161
+          protocol: udp
+        - port: 19162
+          protocol: udp
+        - port: 19163
+          protocol: udp
+        - port: 19164
+          protocol: udp
+        - port: 19165
+          protocol: udp
+        - port: 19166
+          protocol: udp
+        - port: 19167
+          protocol: udp
+        - port: 19168
+          protocol: udp
+        - port: 19169
+          protocol: udp
+        - port: 19170
+          protocol: udp
+        - port: 19171
+          protocol: udp
+        - port: 19172
+          protocol: udp
+        - port: 19173
+          protocol: udp
+        - port: 19174
+          protocol: udp
+        - port: 19175
+          protocol: udp
+        - port: 19176
+          protocol: udp
+        - port: 19177
+          protocol: udp
+        - port: 19178
+          protocol: udp
+        - port: 19179
+          protocol: udp
+        - port: 19180
+          protocol: udp
+        - port: 19181
+          protocol: udp
+        - port: 19182
+          protocol: udp
+        - port: 19183
+          protocol: udp
+        - port: 19184
+          protocol: udp
+        - port: 19185
+          protocol: udp
+        - port: 19186
+          protocol: udp
+        - port: 19187
+          protocol: udp
+        - port: 19188
+          protocol: udp
+        - port: 19189
+          protocol: udp
+        - port: 19190
+          protocol: udp
+        - port: 19191
+          protocol: udp
+        - port: 19192
+          protocol: udp
+        - port: 19193
+          protocol: udp
+        - port: 19194
+          protocol: udp
+        - port: 19195
+          protocol: udp
+        - port: 19196
+          protocol: udp
+        - port: 19197
+          protocol: udp
+        - port: 19198
+          protocol: udp
+        - port: 19199
+          protocol: udp
+        - port: 19200
+          protocol: udp
+        - port: 19201
+          protocol: udp
+        - port: 19202
+          protocol: udp
+        - port: 19203
+          protocol: udp
+        - port: 19204
+          protocol: udp
+        - port: 19205
+          protocol: udp
+        - port: 19206
+          protocol: udp
+        - port: 19207
+          protocol: udp
+        - port: 19208
+          protocol: udp
+        - port: 19209
+          protocol: udp
+        - port: 19210
+          protocol: udp
+        - port: 19211
+          protocol: udp
+        - port: 19212
+          protocol: udp
+        - port: 19213
+          protocol: udp
+        - port: 19214
+          protocol: udp
+        - port: 19215
+          protocol: udp
+        - port: 19216
+          protocol: udp
+        - port: 19217
+          protocol: udp
+        - port: 19218
+          protocol: udp
+        - port: 19219
+          protocol: udp
+        - port: 19220
+          protocol: udp
+        - port: 19221
+          protocol: udp
+        - port: 19222
+          protocol: udp
+        - port: 19223
+          protocol: udp
+        - port: 19224
+          protocol: udp
+        - port: 19225
+          protocol: udp
+        - port: 19226
+          protocol: udp
+        - port: 19227
+          protocol: udp
+        - port: 19228
+          protocol: udp
+        - port: 19229
+          protocol: udp
+        - port: 19230
+          protocol: udp
+        - port: 19231
+          protocol: udp
+      envVariables:
+        PORT_POOL_START: "19132"
+        PORT_POOL_END: "19231"
+      start: cd machine && python3 app.py
+
+  # BOUNCER (public UDP proxy, code lives in ./proxy)
+  - setup: bouncer
+    build:
+      base: ubuntu/nodejs@24
+      buildCommands:
+        - cd proxy
+        - npm install --omit=dev
+      deployFiles: ./proxy
+    run:
+      base: ubuntu/nodejs@24
+      ports:
+        # Public UDP pool, mirrors the `machine` pool 1:1. Player traffic for
+        # worldname.bedops.edwarddeakin.uk:<port> lands here and is relayed to
+        # machine:<port> per the live mapping in `radar` (Valkey).
+        - port: 19132
+          protocol: udp
+        - port: 19133
+          protocol: udp
+        - port: 19134
+          protocol: udp
+        - port: 19135
+          protocol: udp
+        - port: 19136
+          protocol: udp
+        - port: 19137
+          protocol: udp
+        - port: 19138
+          protocol: udp
+        - port: 19139
+          protocol: udp
+        - port: 19140
+          protocol: udp
+        - port: 19141
+          protocol: udp
+        - port: 19142
+          protocol: udp
+        - port: 19143
+          protocol: udp
+        - port: 19144
+          protocol: udp
+        - port: 19145
+          protocol: udp
+        - port: 19146
+          protocol: udp
+        - port: 19147
+          protocol: udp
+        - port: 19148
+          protocol: udp
+        - port: 19149
+          protocol: udp
+        - port: 19150
+          protocol: udp
+        - port: 19151
+          protocol: udp
+        - port: 19152
+          protocol: udp
+        - port: 19153
+          protocol: udp
+        - port: 19154
+          protocol: udp
+        - port: 19155
+          protocol: udp
+        - port: 19156
+          protocol: udp
+        - port: 19157
+          protocol: udp
+        - port: 19158
+          protocol: udp
+        - port: 19159
+          protocol: udp
+        - port: 19160
+          protocol: udp
+        - port: 19161
+          protocol: udp
+        - port: 19162
+          protocol: udp
+        - port: 19163
+          protocol: udp
+        - port: 19164
+          protocol: udp
+        - port: 19165
+          protocol: udp
+        - port: 19166
+          protocol: udp
+        - port: 19167
+          protocol: udp
+        - port: 19168
+          protocol: udp
+        - port: 19169
+          protocol: udp
+        - port: 19170
+          protocol: udp
+        - port: 19171
+          protocol: udp
+        - port: 19172
+          protocol: udp
+        - port: 19173
+          protocol: udp
+        - port: 19174
+          protocol: udp
+        - port: 19175
+          protocol: udp
+        - port: 19176
+          protocol: udp
+        - port: 19177
+          protocol: udp
+        - port: 19178
+          protocol: udp
+        - port: 19179
+          protocol: udp
+        - port: 19180
+          protocol: udp
+        - port: 19181
+          protocol: udp
+        - port: 19182
+          protocol: udp
+        - port: 19183
+          protocol: udp
+        - port: 19184
+          protocol: udp
+        - port: 19185
+          protocol: udp
+        - port: 19186
+          protocol: udp
+        - port: 19187
+          protocol: udp
+        - port: 19188
+          protocol: udp
+        - port: 19189
+          protocol: udp
+        - port: 19190
+          protocol: udp
+        - port: 19191
+          protocol: udp
+        - port: 19192
+          protocol: udp
+        - port: 19193
+          protocol: udp
+        - port: 19194
+          protocol: udp
+        - port: 19195
+          protocol: udp
+        - port: 19196
+          protocol: udp
+        - port: 19197
+          protocol: udp
+        - port: 19198
+          protocol: udp
+        - port: 19199
+          protocol: udp
+        - port: 19200
+          protocol: udp
+        - port: 19201
+          protocol: udp
+        - port: 19202
+          protocol: udp
+        - port: 19203
+          protocol: udp
+        - port: 19204
+          protocol: udp
+        - port: 19205
+          protocol: udp
+        - port: 19206
+          protocol: udp
+        - port: 19207
+          protocol: udp
+        - port: 19208
+          protocol: udp
+        - port: 19209
+          protocol: udp
+        - port: 19210
+          protocol: udp
+        - port: 19211
+          protocol: udp
+        - port: 19212
+          protocol: udp
+        - port: 19213
+          protocol: udp
+        - port: 19214
+          protocol: udp
+        - port: 19215
+          protocol: udp
+        - port: 19216
+          protocol: udp
+        - port: 19217
+          protocol: udp
+        - port: 19218
+          protocol: udp
+        - port: 19219
+          protocol: udp
+        - port: 19220
+          protocol: udp
+        - port: 19221
+          protocol: udp
+        - port: 19222
+          protocol: udp
+        - port: 19223
+          protocol: udp
+        - port: 19224
+          protocol: udp
+        - port: 19225
+          protocol: udp
+        - port: 19226
+          protocol: udp
+        - port: 19227
+          protocol: udp
+        - port: 19228
+          protocol: udp
+        - port: 19229
+          protocol: udp
+        - port: 19230
+          protocol: udp
+        - port: 19231
+          protocol: udp
+      envVariables:
+        MACHINE_HOST: machine
+        PORT_POOL_START: "19132"
+        PORT_POOL_END: "19231"
+      start: cd proxy && node index.js
