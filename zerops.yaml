@@ -43,8 +43,7 @@ zerops:
       base: ubuntu@latest
       prepareCommands:
         # Update apt and install pip since this is a raw Ubuntu base
-        - sudo apt-get update && sudo apt-get install -y python3-pip
-        # Use --break-system-packages to bypass PEP 668 restrictions in Ubuntu containers
+        - sudo apt-get update && sudo apt-get install -y python3-pip &&
         - sudo python3 -m pip install -r machine/requirements.txt --break-system-packages
       ports:
         - port: 5001
@@ -261,8 +260,7 @@ zerops:
     build:
       base: ubuntu/nodejs@24
       buildCommands:
-        - cd bouncer
-        - npm install --omit=dev
+        - cd bouncer && npm install --omit=dev
       deployFiles: ./bouncer
     run:
       base: ubuntu/nodejs@24
