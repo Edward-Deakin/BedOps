@@ -10,6 +10,7 @@ import zipfile
 import socket
 import re
 import json
+import threading
 from datetime import datetime, timezone
 
 # Initialise Flask app
@@ -158,10 +159,20 @@ def create_world():
 
         # 4. Configure server.properties dynamically
         properties_path = os.path.join(world_path, 'server.properties')
-        with open(properties_path, 'a') as props:
-            props.write(f"\nserver-name={world_name}")
-            props.write(f"\nserver-port={allocated_port}")
-            props.write(f"\nserver-portv6={allocated_port}")
+
+        with open(properties_path, 'r') as file:
+            props = file.read()
+
+        # Replace default port assignments with the allocated port
+        props = re.sub(r'server-port=\d+', f'server-port={allocated_port}', props)
+        props = re.sub(r'server-portv6=\d+', f'server-portv6={allocated_port}', props)
+
+        # Bedrock forces default ports if LAN visibility is true, so we MUST disable it
+        props = re.sub(r'enable-lan-visibility=true', 'enable-lan-visibility=false', props)
+        props = re.sub(r'server-name=.*', f'server-name={world_name}', props)
+
+        with open(properties_path, 'w') as file:
+            file.write(props)
 
         executable_path = os.path.join(world_path, 'bedrock_server')
         os.chmod(executable_path, 0o755)
@@ -250,9 +261,5 @@ def pause_world():
 
 
 if __name__ == '__main__':
-    try:
-        ensure_template_exists()
-    except Exception as err:
-        print(f"Startup template initialization failed: {err}")
-
+    threading.Thread(target=ensure_template_exists, daemon=True).start()
     app.run(debug=True, host='0.0.0.0', port=5001)
