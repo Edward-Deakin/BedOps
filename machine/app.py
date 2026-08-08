@@ -11,6 +11,7 @@ import socket
 import re
 import json
 import threading
+import time
 from datetime import datetime, timezone
 
 # Initialise Flask app
@@ -109,6 +110,7 @@ def create_world():
     if world_name in active_processes:
         return jsonify({'error': 'Server is already running.'}), 409
 
+    allocated_port = None
     try:
         ensure_template_exists()
         os.makedirs(ARCHIVES_DIR, exist_ok=True)
@@ -190,6 +192,19 @@ def create_world():
             text=True
         )
 
+        # Give the server a moment to fail fast (bad binary, port already in
+        # use, etc.) before we tell radar/brain it's actually up.
+        time.sleep(2)
+
+        if process.poll() is not None:
+            crash_output = (process.stdout.read() if process.stdout else '') + \
+                (process.stderr.read() if process.stderr else '')
+            radar.delete(f'port:{allocated_port}')
+            return jsonify({
+                'error': f'bedrock_server exited immediately (code {process.returncode})',
+                'output': crash_output.strip()
+            }), 500
+
         active_processes[world_name] = {
             "process": process,
             "port": allocated_port,
@@ -203,6 +218,8 @@ def create_world():
         }), 201
 
     except Exception as e:
+        if allocated_port:
+            radar.delete(f'port:{allocated_port}')
         return jsonify({'error': f'Machine failed to boot world: {e}'}), 500
 
 
