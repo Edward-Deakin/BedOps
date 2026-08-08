@@ -263,7 +263,7 @@ zerops:
       buildCommands:
         - cd bouncer
         - npm install --omit=dev
-      deployFiles: ./proxy
+      deployFiles: ./bouncer
     run:
       base: ubuntu/nodejs@24
       ports:
