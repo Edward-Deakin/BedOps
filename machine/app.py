@@ -42,11 +42,19 @@ def get_internal_ip():
 # Helper for checking integrity of bedrock binaries and for downloading when missing
 def ensure_template_exists():
     template_binary = os.path.join(SHARED_TEMPLATE_DIR, 'bedrock_server')
+    resource_packs = os.path.join(SHARED_TEMPLATE_DIR, 'resource_packs')
+    behavior_packs = os.path.join(SHARED_TEMPLATE_DIR, 'behavior_packs')
 
-    if os.path.exists(template_binary):
+    # Verify that all critical binary and asset assets exist
+    if os.path.exists(template_binary) and os.path.exists(resource_packs) and os.path.exists(behavior_packs):
         return
 
-    print("Template not found in shared storage. Downloading...")
+    print("Template missing or incomplete in shared storage. Downloading clean version...")
+
+    # If folder exists but is incomplete, remove it to prevent extract conflicts
+    if os.path.exists(SHARED_TEMPLATE_DIR):
+        shutil.rmtree(SHARED_TEMPLATE_DIR)
+
     os.makedirs(SHARED_TEMPLATE_DIR, exist_ok=True)
 
     req = urllib.request.Request(
@@ -74,6 +82,7 @@ def ensure_template_exists():
     with urllib.request.urlopen(req_zip) as response, open(zip_path, 'wb') as out_file:
         shutil.copyfileobj(response, out_file)
 
+    print("Extracting template files...")
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(SHARED_TEMPLATE_DIR)
 
@@ -124,6 +133,14 @@ def create_world():
                         'hashed_pin': hashed_pin,
                         'platform': 'BedOps powered by Zerops'
                     }, file)
+
+        # Sanity check: Ensure resource_packs exist in active world directory
+        world_resource_packs = os.path.join(world_path, 'resource_packs')
+        if not os.path.exists(world_resource_packs):
+            print(f"Warning: {world_name} directory is missing resource_packs. Re-copying from template...")
+            if os.path.exists(world_path):
+                shutil.rmtree(world_path)
+            shutil.copytree(SHARED_TEMPLATE_DIR, world_path)
 
         # 2. Allocate a port
         allocated_port = None
@@ -233,4 +250,9 @@ def pause_world():
 
 
 if __name__ == '__main__':
+    try:
+        ensure_template_exists()
+    except Exception as err:
+        print(f"Startup template initialization failed: {err}")
+
     app.run(debug=True, host='0.0.0.0', port=5001)
