@@ -2,19 +2,26 @@ zerops:
   # This file allows for the deployment of BedOps to Zerops.
   # It is built to run as a monorepo which makes it easier for judgement.
   #
+  # The UDP port pool (19132-19231) is fixed and shared 1:1 between `machine`
+  # (internal - where bedrock_server processes actually bind) and `bouncer` (public -
+  # where players connect, code lives in ./proxy). Bedrock/RakNet has no SNI or SRV
+  # support, so each hosted world is routed by a dedicated port rather than by its
+  # worldname.bedops.edwarddeakin.uk subdomain alone; players connect via
+  # worldname.bedops.edwarddeakin.uk:<assigned port>.
+  # UDP ports are declared in both machine and bouncer to ensure routing is correct.
   # These will all link to <worldname>.bedops.edwarddeakin.uk:<port> via bouncer which will relay this to machine.
 
   # BRAIN
   - setup: brain
     build:
       base: ubuntu/python@3.11
-      buildCommands:
-        # The following commands build up the dependencies required for the brain
-        - cd brain
-        - pip install -r requirements.txt
+      addToRunPrepare:
+        - brain/requirements.txt
       deployFiles: ./brain
     run:
       base: ubuntu/python@3.11
+      prepareCommands:
+        - python3 -m pip install -r brain/requirements.txt
       ports:
         - port: 5002
           httpSupport: true
@@ -29,13 +36,16 @@ zerops:
   - setup: machine
     build:
       base: ubuntu@latest
-      buildCommands:
-        # The following commands build up the dependencies required for the machine
-        - cd machine
-        - pip install -r requirements.txt
+      addToRunPrepare:
+        - machine/requirements.txt
       deployFiles: ./machine
     run:
       base: ubuntu@latest
+      prepareCommands:
+        # Update apt and install pip since this is a raw Ubuntu base
+        - apt-get update && apt-get install -y python3-pip
+        # Use --break-system-packages to bypass PEP 668 restrictions in Ubuntu containers
+        - python3 -m pip install -r machine/requirements.txt --break-system-packages
       ports:
         - port: 5001
           httpSupport: true
