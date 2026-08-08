@@ -261,7 +261,7 @@ zerops:
     build:
       base: ubuntu/nodejs@24
       buildCommands:
-        - cd proxy
+        - cd bouncer
         - npm install --omit=dev
       deployFiles: ./proxy
     run:
@@ -474,4 +474,4 @@ zerops:
         MACHINE_HOST: machine
         PORT_POOL_START: "19132"
         PORT_POOL_END: "19231"
-      start: cd proxy && node index.js
+      start: cd bouncer && node index.js
