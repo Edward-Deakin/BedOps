@@ -117,7 +117,7 @@ def create():
                 'pin': hashed_pin,
                 'db_id': world_id
             },
-            timeout=15  # Extended slightly for extraction times
+            timeout=300  # Extended slightly for extraction times
         )
 
         # Return worker response to frontend
@@ -160,7 +160,7 @@ def stop():
         response = requests.post(
             url=f'{WORKER_URL}/api/stop',
             json={'world_name': world_name},
-            timeout=20  # Allow time for the worker to zip the world
+            timeout=300  # Allow time for the worker to zip the world
         )
 
         return jsonify(response.json()), response.status_code
