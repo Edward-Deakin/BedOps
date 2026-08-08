@@ -9,6 +9,7 @@ import urllib.request
 import zipfile
 import socket
 import re
+import json
 from datetime import datetime, timezone
 
 # Initialise Flask app
@@ -49,19 +50,25 @@ def ensure_template_exists():
     os.makedirs(SHARED_TEMPLATE_DIR, exist_ok=True)
 
     req = urllib.request.Request(
-        'https://www.minecraft.net/en-us/download/server/bedrock',
+        'https://net-secondary.web.minecraft-services.net/api/v1.0/download/links',
         headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)'}
     )
 
     with urllib.request.urlopen(req) as response:
-        html = response.read().decode('utf-8')
+        data = json.loads(response.read().decode('utf-8'))
 
-    match = re.search(r'https://[^"]*bin-linux/bedrock-server-[0-9\.]+\.zip', html)
-    if not match:
-        raise Exception("Could not find the download URL.")
+    download_url = None
+    for link in data.get('result', {}).get('links', []):
+        if link.get('downloadType') == 'serverBedrockLinux':
+            download_url = link.get('downloadUrl')
+            break
 
-    download_url = match.group(0)
+    if not download_url:
+        raise Exception("Could not find the Linux Bedrock server URL in the Mojang API response.")
+
     zip_path = os.path.join(SHARED_TEMPLATE_DIR, 'server.zip')
+
+    print(f"Downloading server from {download_url}...")
 
     req_zip = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)'})
     with urllib.request.urlopen(req_zip) as response, open(zip_path, 'wb') as out_file:
@@ -72,6 +79,7 @@ def ensure_template_exists():
 
     os.remove(zip_path)
     os.chmod(template_binary, 0o755)
+    print("Template successfully downloaded and extracted.")
 
 
 # Route for checking API
