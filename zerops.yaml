@@ -42,8 +42,10 @@ zerops:
     run:
       base: ubuntu@latest
       prepareCommands:
-        # Update apt and install pip since this is a raw Ubuntu base
-        - sudo apt-get update && sudo apt-get install -y python3-pip
+        # Update apt and install pip since this is a raw Ubuntu base.
+        # libcurl4 is required by the bedrock_server binary itself, which will
+        # fail with "error while loading shared libraries: libcurl.so.4" without it.
+        - sudo apt-get update && sudo apt-get install -y python3-pip libcurl4
         - sudo python3 -m pip install -r machine/requirements.txt --break-system-packages
       ports:
         - port: 5001

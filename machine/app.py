@@ -31,6 +31,13 @@ radar = redis.Redis.from_url(RADAR_CONN_STRING, decode_responses=True)
 # Dictionary to track running subprocesses in memory
 active_processes = {}
 
+# Helper for accepting the Bedrock EULA, required or bedrock_server refuses to boot
+def ensure_eula_accepted(world_path):
+    eula_path = os.path.join(world_path, 'eula.txt')
+    with open(eula_path, 'w') as file:
+        file.write('eula=true\n')
+
+
 # Helper for retrieving IP from a specific container in Zerops private network
 def get_internal_ip():
     try:
@@ -174,6 +181,8 @@ def create_world():
 
         with open(properties_path, 'w') as file:
             file.write(props)
+
+        ensure_eula_accepted(world_path)
 
         executable_path = os.path.join(world_path, 'bedrock_server')
         os.chmod(executable_path, 0o755)
