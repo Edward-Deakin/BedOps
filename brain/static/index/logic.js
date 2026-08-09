@@ -64,11 +64,21 @@ manage_world_button.addEventListener("click", async (e) => {
             }
         });
 
-        const api_response = await response.json();
-
         if (response.ok) {
-            alert(`Success! ${api_response.message}`);
+            // Stateless by design: the server keeps nothing after this —
+            // this download is the only remaining copy of the world.
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${world_name_input}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            alert(`'${world_name_input}' stopped and downloading now.\n\nKeep the zip safe — use "Upload World" to resume it later.`);
         } else {
+            const api_response = await response.json();
             alert(`Error: ${api_response.error || 'Failed to stop world.'}`);
         }
     } catch (error) {
@@ -79,5 +89,43 @@ manage_world_button.addEventListener("click", async (e) => {
 
 // Event listener for clicks on the upload world button
 upload_world_button.addEventListener("click", async (e) => {
-    alert("upload world feature in development!")
+    const world_name_input = prompt("Name this world (same name as before to resume it, or a new one):");
+    if (!world_name_input) return;
+
+    const world_pin_input = prompt("Choose a PIN to protect this world:");
+    if (!world_pin_input) return;
+
+    const file_input = document.createElement("input");
+    file_input.type = "file";
+    file_input.accept = ".zip";
+
+    file_input.addEventListener("change", async () => {
+        const file = file_input.files[0];
+        if (!file) return;
+
+        const form_data = new FormData();
+        form_data.append("world_name", world_name_input);
+        form_data.append("pin", world_pin_input);
+        form_data.append("world_file", file);
+
+        try {
+            const response = await fetch("api/resume", {
+                method: "POST",
+                body: form_data
+            });
+
+            const api_response = await response.json();
+
+            if (response.ok) {
+                alert(`Success! Your world is booting up.\n\nConnect to your project's IP address on Port: ${api_response.port}`);
+            } else {
+                alert(`Error: ${api_response.error}`);
+            }
+        } catch (error) {
+            console.log(error);
+            alert(`Sorry, something went wrong and your world was not resumed.\n\nError:\n${error.message}`);
+        }
+    });
+
+    file_input.click();
 });

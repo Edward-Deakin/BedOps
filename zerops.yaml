@@ -10,6 +10,11 @@ zerops:
   # worldname.bedops.edwarddeakin.uk:<assigned port>.
   # UDP ports are declared in both machine and bouncer to ensure routing is correct.
   # These will all link to <worldname>.bedops.edwarddeakin.uk:<port> via bouncer which will relay this to machine.
+  #
+  # `concierge` is a natural-language ops agent (its own service, its own URL) that
+  # drives the same brain API a human uses via the dashboard — create/stop/list worlds
+  # by plain English instead of clicking buttons. Deterministic intent parsing (no LLM
+  # call) so it has zero external dependency during a live demo.
 
   # BRAIN
   - setup: brain
@@ -478,3 +483,23 @@ zerops:
         PORT_POOL_START: "19132"
         PORT_POOL_END: "19231"
       start: cd bouncer && node index.js
+
+  # CONCIERGE (natural-language ops agent, code lives in ./concierge)
+  - setup: concierge
+    build:
+      base: ubuntu/python@3.11
+      addToRunPrepare:
+        - concierge/requirements.txt
+      deployFiles: ./concierge
+    run:
+      base: ubuntu/python@3.11
+      prepareCommands:
+        - python3 -m pip install -r concierge/requirements.txt
+      ports:
+        - port: 5003
+          httpSupport: true
+      envVariables:
+        BRAIN_URL: http://brain:5002
+      # Same 300s-timeout reasoning as brain: create/stop can take a while,
+      # and concierge proxies those same calls on the user's behalf.
+      start: cd concierge && gunicorn app:app -b 0.0.0.0:5003 --timeout 300

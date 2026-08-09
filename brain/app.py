@@ -74,6 +74,20 @@ def index():
     return render_template('index.html')
 
 
+# API route reporting worlds that are actually running right now.
+# Deliberately NOT the full history of every world ever created — this app
+# has no accounts, so a full history would be a public log of everyone's
+# world names with no auth to gate it.
+@app.route('/api/worlds')
+def list_worlds():
+    try:
+        response = requests.get(f'{WORKER_URL}/api/worlds', timeout=5)
+        response.raise_for_status()
+        return jsonify(response.json())
+    except Exception as e:
+        return jsonify({'error': f'Could not reach machine for live status\n{e}'}), 502
+
+
 # API route for creating a world
 @app.route('/api/create', methods=['POST'])
 def create():
@@ -157,16 +171,79 @@ def stop():
 
     # Forward authenticated stop request to the machine worker
     try:
-        response = requests.post(
+        upstream = requests.post(
             url=f'{WORKER_URL}/api/stop',
             json={'world_name': world_name},
-            timeout=300
+            timeout=300,
             # Allow time for the worker to zip the world
+            stream=True
         )
-
-        return jsonify(response.json()), response.status_code
     except Exception as e:
         return jsonify({'error': f'Error communicating with worker\n{e}'}), 500
+
+    # Success means machine sent the zip back — stream it straight through to
+    # the browser. BedOps is stateless: this download IS the only backup.
+    if upstream.headers.get('Content-Type', '').startswith('application/zip'):
+        return Response(
+            upstream.iter_content(chunk_size=65536),
+            content_type='application/zip',
+            headers={
+                'Content-Disposition': upstream.headers.get(
+                    'Content-Disposition', f'attachment; filename="{world_name}.zip"'
+                )
+            }
+        )
+
+    # Anything else is an error response from machine — relay it as JSON
+    try:
+        return jsonify(upstream.json()), upstream.status_code
+    except ValueError:
+        return jsonify({'error': 'Unexpected response from worker.'}), 502
+
+
+# API route for resuming a world from a previously-downloaded zip. The
+# uploaded file is the only remaining copy of that world, so it doubles as
+# the credential — same trust model as "whoever has the file owns the world"
+# already implied by handing it to the player instead of keeping an archive.
+@app.route('/api/resume', methods=['POST'])
+def resume():
+    world_name = request.form.get('world_name', '')
+    raw_pin = request.form.get('pin', '')
+    uploaded_file = request.files.get('world_file')
+
+    if not raw_pin or not world_name:
+        return jsonify({'error': 'World name and PIN required'}), 400
+    if not uploaded_file:
+        return jsonify({'error': 'World file required'}), 400
+
+    hashed_pin = generate_password_hash(raw_pin)
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+                    INSERT INTO worlds (world_name, hashed_pin)
+                    VALUES (%s, %s) ON CONFLICT (world_name) DO
+                    UPDATE SET hashed_pin = EXCLUDED.hashed_pin
+                        RETURNING id;
+                    """, (world_name, hashed_pin))
+        world_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        return jsonify({'error': f'Error registering world\n{e}'}), 400
+
+    try:
+        response = requests.post(
+            url=f'{WORKER_URL}/api/resume',
+            data={'world_name': world_name, 'pin': hashed_pin, 'db_id': world_id},
+            files={'world_file': (uploaded_file.filename, uploaded_file.stream, 'application/zip')},
+            timeout=300
+        )
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({'error': f'Error communicating with worker\n{e}'}), 400
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 # Import required libraries
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 import os
 import shutil
 import yaml
@@ -11,6 +11,7 @@ import socket
 import re
 import threading
 import time
+import tempfile
 from datetime import datetime, timezone
 
 # Initialise Flask app
@@ -19,7 +20,6 @@ app = Flask(__name__)
 # Retrieve environment variables
 WORLDS_DIR = os.environ.get('DATA_DIR', './worlds')
 SHARED_TEMPLATE_DIR = os.environ.get('SHARED_TEMPLATE_DIR', '/mnt/shared/bedrock_template')
-ARCHIVES_DIR = os.environ.get('ARCHIVES_DIR', '/mnt/shared/archives')
 RADAR_CONN_STRING = os.environ.get('RADAR_CONN_STRING', 'redis://localhost:6379')
 PORT_POOL_START = int(os.environ.get('PORT_POOL_START', 20000))
 PORT_POOL_END = int(os.environ.get('PORT_POOL_END', 20050))
@@ -119,60 +119,25 @@ def ensure_template_exists():
         print("Template successfully downloaded and extracted.")
 
 
-# Route for checking API
-@app.route('/')
-def index():
-    return jsonify({'message': 'Machine is online!'})
-
-# Route for creating or resuming worlds
-@app.route('/api/create', methods=['POST'])
-def create_world():
-    data = request.get_json() or {}
-
-    world_name = data.get('world_name', 'BedOps World')
-    hashed_pin = data.get('pin', '')
-    db_id = data.get('db_id', '')
-
-    if world_name in active_processes:
-        return jsonify({'error': 'Server is already running.'}), 409
+# Shared tail end of create/resume: sanity-check the directory, allocate a
+# port, patch server.properties, accept the EULA, and boot bedrock_server.
+# allow_template_repair gates the resource_packs self-heal — safe for a
+# freshly-templated create, wrong for resume (a broken upload should error,
+# not get silently replaced by a blank template pretending to be the
+# player's world).
+def _boot_world(world_name, hashed_pin, db_id, world_path, allow_template_repair):
+    world_resource_packs = os.path.join(world_path, 'resource_packs')
+    if not os.path.exists(world_resource_packs):
+        if not allow_template_repair:
+            return jsonify({'error': 'World file is missing resource_packs — invalid or corrupt upload.'}), 400
+        print(f"Warning: {world_name} directory is missing resource_packs. Re-copying from template...")
+        if os.path.exists(world_path):
+            shutil.rmtree(world_path)
+        shutil.copytree(SHARED_TEMPLATE_DIR, world_path)
 
     allocated_port = None
     try:
-        ensure_template_exists()
-        os.makedirs(ARCHIVES_DIR, exist_ok=True)
-
-        world_path = os.path.join(WORLDS_DIR, world_name)
-        archive_path = os.path.join(ARCHIVES_DIR, f"{world_name}.zip")
-
-        # 1. Restore from ZIP if it exists, otherwise use fresh template
-        if not os.path.exists(world_path):
-            if os.path.exists(archive_path):
-                print(f"Restoring {world_name} from archive...")
-                shutil.unpack_archive(archive_path, world_path)
-            else:
-                print(f"Creating fresh world for {world_name}...")
-                shutil.copytree(SHARED_TEMPLATE_DIR, world_path)
-
-                with open(os.path.join(world_path, 'bedops.yaml'), 'w') as file:
-                    yaml.dump({
-                        'version': '1.0',
-                        'created': datetime.now(timezone.utc).isoformat(),
-                        'world_name': world_name,
-                        'db_id': db_id,
-                        'hashed_pin': hashed_pin,
-                        'platform': 'BedOps powered by Zerops'
-                    }, file)
-
-        # Sanity check: Ensure resource_packs exist in active world directory
-        world_resource_packs = os.path.join(world_path, 'resource_packs')
-        if not os.path.exists(world_resource_packs):
-            print(f"Warning: {world_name} directory is missing resource_packs. Re-copying from template...")
-            if os.path.exists(world_path):
-                shutil.rmtree(world_path)
-            shutil.copytree(SHARED_TEMPLATE_DIR, world_path)
-
-        # 2. Allocate a port
-        allocated_port = None
+        # 1. Allocate a port
         for port in range(PORT_POOL_START, PORT_POOL_END + 1):
             if not radar.exists(f'port:{port}'):
                 allocated_port = port
@@ -181,11 +146,11 @@ def create_world():
         if not allocated_port:
             return jsonify({'error': 'There are no free ports to host the world.'}), 503
 
-        # 3. Lock it in Radar
+        # 2. Lock it in Radar
         container_ip = get_internal_ip()
         radar.set(f'port:{allocated_port}', f'{container_ip}:{allocated_port}')
 
-        # 4. Configure server.properties dynamically
+        # 3. Configure server.properties dynamically
         properties_path = os.path.join(world_path, 'server.properties')
 
         with open(properties_path, 'r') as file:
@@ -206,7 +171,7 @@ def create_world():
         executable_path = os.path.join(world_path, 'bedrock_server')
         os.chmod(executable_path, 0o755)
 
-        # 5. Boot the server
+        # 4. Boot the server
         env = os.environ.copy()
         env['LD_LIBRARY_PATH'] = '.'
 
@@ -255,7 +220,94 @@ def create_world():
         return jsonify({'error': f'Machine failed to boot world: {e}'}), 500
 
 
-# Route for stopping worlds, zipping, and cleaning up
+# Route for checking API
+@app.route('/')
+def index():
+    return jsonify({'message': 'Machine is online!'})
+
+
+# Route for reporting which worlds are actually running on this machine right now
+@app.route('/api/worlds')
+def list_worlds():
+    return jsonify([
+        {'world_name': name, 'port': data['port']}
+        for name, data in active_processes.items()
+    ])
+
+
+# Route for creating fresh worlds
+@app.route('/api/create', methods=['POST'])
+def create_world():
+    data = request.get_json() or {}
+
+    world_name = data.get('world_name', 'BedOps World')
+    hashed_pin = data.get('pin', '')
+    db_id = data.get('db_id', '')
+
+    if world_name in active_processes:
+        return jsonify({'error': 'Server is already running.'}), 409
+
+    try:
+        ensure_template_exists()
+
+        world_path = os.path.join(WORLDS_DIR, world_name)
+
+        if not os.path.exists(world_path):
+            print(f"Creating fresh world for {world_name}...")
+            shutil.copytree(SHARED_TEMPLATE_DIR, world_path)
+
+            with open(os.path.join(world_path, 'bedops.yaml'), 'w') as file:
+                yaml.dump({
+                    'version': '1.0',
+                    'created': datetime.now(timezone.utc).isoformat(),
+                    'world_name': world_name,
+                    'db_id': db_id,
+                    'hashed_pin': hashed_pin,
+                    'platform': 'BedOps powered by Zerops'
+                }, file)
+    except Exception as e:
+        return jsonify({'error': f'Machine failed to prepare world: {e}'}), 500
+
+    return _boot_world(world_name, hashed_pin, db_id, world_path, allow_template_repair=True)
+
+
+# Route for resuming a world from a previously-downloaded zip — the upload
+# IS the world's only remaining copy, there is nothing kept server-side to
+# fall back to.
+@app.route('/api/resume', methods=['POST'])
+def resume_world():
+    world_name = request.form.get('world_name', '')
+    hashed_pin = request.form.get('pin', '')
+    db_id = request.form.get('db_id', '')
+    uploaded_file = request.files.get('world_file')
+
+    if not world_name:
+        return jsonify({'error': 'World name required.'}), 400
+    if world_name in active_processes:
+        return jsonify({'error': 'Server is already running.'}), 409
+    if not uploaded_file:
+        return jsonify({'error': 'No world file uploaded.'}), 400
+
+    world_path = os.path.join(WORLDS_DIR, world_name)
+    try:
+        if os.path.exists(world_path):
+            shutil.rmtree(world_path)
+        os.makedirs(world_path, exist_ok=True)
+        with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
+            zip_ref.extractall(world_path)
+    except zipfile.BadZipFile:
+        shutil.rmtree(world_path, ignore_errors=True)
+        return jsonify({'error': 'That file is not a valid world zip.'}), 400
+    except Exception as e:
+        shutil.rmtree(world_path, ignore_errors=True)
+        return jsonify({'error': f'Could not unpack world file: {e}'}), 400
+
+    return _boot_world(world_name, hashed_pin, db_id, world_path, allow_template_repair=False)
+
+
+# Route for stopping worlds, zipping for download, and cleaning up — BedOps
+# is stateless, so the zip handed back to the caller is the ONLY copy;
+# nothing is retained here or in shared storage.
 @app.route('/api/stop', methods=['POST'])
 def stop_world():
     data = request.get_json() or {}
@@ -282,25 +334,33 @@ def stop_world():
         print(f"Error during shutdown of {world_name}: {e}")
         process.terminate()
 
-    # 1. Zip the world directory directly into shared storage
-    os.makedirs(ARCHIVES_DIR, exist_ok=True)
-    archive_base = os.path.join(ARCHIVES_DIR, world_name)
+    # 1. Zip the world into a scratch temp dir (never shared storage)
+    tmp_dir = tempfile.mkdtemp(prefix='bedops-dl-')
+    print(f"Zipping {world_name} for download...")
+    zip_path = shutil.make_archive(os.path.join(tmp_dir, world_name), 'zip', world_path)
 
-    print(f"Archiving {world_name} to shared storage...")
-    shutil.make_archive(archive_base, 'zip', world_path)
-
-    # 2. Delete the raw, uncompressed files from the active compute container
-    print(f"Deleting raw files for {world_name} to save space...")
-    shutil.rmtree(world_path)
-
-    # 3. Free the port in Radar so Bouncer closes the UDP tunnel
+    # 2. Free the port in Radar so Bouncer closes the UDP tunnel
     radar.delete(f'port:{port}')
     del active_processes[world_name]
 
-    return jsonify({
-        'status': 'success',
-        'message': f'Server {world_name} gracefully stopped, archived to shared storage, and cleaned up.'
-    }), 200
+    # 3. Delete the raw, uncompressed files — nothing kept server-side
+    print(f"Deleting raw files for {world_name} — nothing is retained on the server.")
+    shutil.rmtree(world_path)
+
+    # Read + delete synchronously rather than send_file + call_on_close —
+    # under this gunicorn setup the close callback doesn't reliably fire
+    # (confirmed by testing: temp dirs survived past the response), which
+    # would silently leak disk space on every stop. Read fully into memory
+    # instead; world zips are small enough for this to be fine.
+    with open(zip_path, 'rb') as f:
+        data = f.read()
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return Response(
+        data,
+        mimetype='application/zip',
+        headers={'Content-Disposition': f'attachment; filename="{world_name}.zip"'}
+    )
 
 
 @app.route('/api/pause', methods=['POST'])

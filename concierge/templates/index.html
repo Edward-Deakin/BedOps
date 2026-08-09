@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BedOps Concierge</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="{{ url_for('static', filename='index/logic.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='index/global.css') }}">
+</head>
+<body>
+<div class="minecraft-card">
+    <div class="inner-panel">
+        <h1 class="bedops-logo">Concierge</h1>
+        <p class="text-center">Talk to your infrastructure. I create, stop, and check on real BedOps worlds — no mock, this actually boots <code>bedrock_server</code>.</p>
+        <div id="log" class="chat-log" role="log" aria-live="polite"></div>
+        <form id="chat-form" class="chat-form">
+            <input id="chat-input" type="text" autocomplete="off" placeholder="create a world called Skyline pin 4242" aria-label="Message"/>
+            <button type="submit" class="mc-button">Send</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>
