@@ -9,7 +9,6 @@ import urllib.request
 import zipfile
 import socket
 import re
-import json
 import threading
 import time
 from datetime import datetime, timezone
@@ -31,11 +30,32 @@ radar = redis.Redis.from_url(RADAR_CONN_STRING, decode_responses=True)
 # Dictionary to track running subprocesses in memory
 active_processes = {}
 
+# Guards ensure_template_exists() so the startup thread and an incoming
+# request can't download/extract the shared template at the same time
+template_lock = threading.Lock()
+
 # Helper for accepting the Bedrock EULA, required or bedrock_server refuses to boot
 def ensure_eula_accepted(world_path):
     eula_path = os.path.join(world_path, 'eula.txt')
     with open(eula_path, 'w') as file:
         file.write('eula=true\n')
+
+
+# Continuously drains a process's stdout into a bounded rolling buffer, and
+# also mirrors it to a log file in the world folder so it can be tailed live
+# from a terminal for diagnostics. Without this, bedrock_server blocks
+# forever once the OS pipe buffer fills from its own startup logging, since
+# nothing else was ever reading it.
+def drain_process_output(process, buffer, world_path, max_lines=200):
+    log_path = os.path.join(world_path, 'bedops-console.log')
+    with open(log_path, 'w') as log_file:
+        for line in iter(process.stdout.readline, ''):
+            buffer.append(line)
+            if len(buffer) > max_lines:
+                del buffer[0]
+            log_file.write(line)
+            log_file.flush()
+    process.stdout.close()
 
 
 # Helper for retrieving IP from a specific container in Zerops private network
@@ -48,6 +68,14 @@ def get_internal_ip():
         return "127.0.0.1"
 
 
+# Pinned to a known-good pre-regression build. Mojang's "latest" Linux build
+# (as served by their download-links API around 1.26.30.5) has a confirmed
+# regression (BDS-23066) where the unconnected-pong is sent with no MOTD
+# payload whenever enable-lan-visibility=false, which is required here to
+# keep bedrock_server on its assigned port. 1.26.23.1 predates the regression.
+BEDROCK_SERVER_DOWNLOAD_URL = 'https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-1.26.23.1.zip'
+
+
 # Helper for checking integrity of bedrock binaries and for downloading when missing
 def ensure_template_exists():
     template_binary = os.path.join(SHARED_TEMPLATE_DIR, 'bedrock_server')
@@ -58,46 +86,37 @@ def ensure_template_exists():
     if os.path.exists(template_binary) and os.path.exists(resource_packs) and os.path.exists(behavior_packs):
         return
 
-    print("Template missing or incomplete in shared storage. Downloading clean version...")
+    with template_lock:
+        # Re-check now that we hold the lock: another thread may have just
+        # finished the download while we were waiting for it
+        if os.path.exists(template_binary) and os.path.exists(resource_packs) and os.path.exists(behavior_packs):
+            return
 
-    # If folder exists but is incomplete, remove it to prevent extract conflicts
-    if os.path.exists(SHARED_TEMPLATE_DIR):
-        shutil.rmtree(SHARED_TEMPLATE_DIR)
+        print("Template missing or incomplete in shared storage. Downloading clean version...")
 
-    os.makedirs(SHARED_TEMPLATE_DIR, exist_ok=True)
+        # If folder exists but is incomplete, remove it to prevent extract conflicts
+        if os.path.exists(SHARED_TEMPLATE_DIR):
+            shutil.rmtree(SHARED_TEMPLATE_DIR)
 
-    req = urllib.request.Request(
-        'https://net-secondary.web.minecraft-services.net/api/v1.0/download/links',
-        headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)'}
-    )
+        os.makedirs(SHARED_TEMPLATE_DIR, exist_ok=True)
 
-    with urllib.request.urlopen(req) as response:
-        data = json.loads(response.read().decode('utf-8'))
+        download_url = BEDROCK_SERVER_DOWNLOAD_URL
 
-    download_url = None
-    for link in data.get('result', {}).get('links', []):
-        if link.get('downloadType') == 'serverBedrockLinux':
-            download_url = link.get('downloadUrl')
-            break
+        zip_path = os.path.join(SHARED_TEMPLATE_DIR, 'server.zip')
 
-    if not download_url:
-        raise Exception("Could not find the Linux Bedrock server URL in the Mojang API response.")
+        print(f"Downloading server from {download_url}...")
 
-    zip_path = os.path.join(SHARED_TEMPLATE_DIR, 'server.zip')
+        req_zip = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)'})
+        with urllib.request.urlopen(req_zip) as response, open(zip_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
 
-    print(f"Downloading server from {download_url}...")
+        print("Extracting template files...")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(SHARED_TEMPLATE_DIR)
 
-    req_zip = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)'})
-    with urllib.request.urlopen(req_zip) as response, open(zip_path, 'wb') as out_file:
-        shutil.copyfileobj(response, out_file)
-
-    print("Extracting template files...")
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(SHARED_TEMPLATE_DIR)
-
-    os.remove(zip_path)
-    os.chmod(template_binary, 0o755)
-    print("Template successfully downloaded and extracted.")
+        os.remove(zip_path)
+        os.chmod(template_binary, 0o755)
+        print("Template successfully downloaded and extracted.")
 
 
 # Route for checking API
@@ -197,27 +216,31 @@ def create_world():
             env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True
         )
+
+        # Drain stdout continuously for the life of the process so bedrock_server
+        # never blocks on a full pipe buffer; recent lines are kept for crash diagnostics
+        output_buffer = []
+        threading.Thread(target=drain_process_output, args=(process, output_buffer, world_path), daemon=True).start()
 
         # Give the server a moment to fail fast (bad binary, port already in
         # use, etc.) before we tell radar/brain it's actually up.
         time.sleep(2)
 
         if process.poll() is not None:
-            crash_output = (process.stdout.read() if process.stdout else '') + \
-                (process.stderr.read() if process.stderr else '')
             radar.delete(f'port:{allocated_port}')
             return jsonify({
                 'error': f'bedrock_server exited immediately (code {process.returncode})',
-                'output': crash_output.strip()
+                'output': ''.join(output_buffer).strip()
             }), 500
 
         active_processes[world_name] = {
             "process": process,
             "port": allocated_port,
-            "path": world_path
+            "path": world_path,
+            "output": output_buffer
         }
 
         return jsonify({

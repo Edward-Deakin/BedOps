@@ -30,7 +30,10 @@ zerops:
         DB_HOST: ${db_hostname}
         DB_USER: ${db_user}
         DB_PASSWORD: ${db_password}
-      start: cd brain && gunicorn app:app -b 0.0.0.0:5002
+      # Default gunicorn worker timeout (30s) is shorter than the 300s brain
+      # waits on machine for /api/create, which can be slow on a world's
+      # first boot while machine downloads the Bedrock server template.
+      start: cd brain && gunicorn app:app -b 0.0.0.0:5002 --timeout 300
 
   # MACHINE
   - setup: machine

@@ -160,7 +160,8 @@ def stop():
         response = requests.post(
             url=f'{WORKER_URL}/api/stop',
             json={'world_name': world_name},
-            timeout=300  # Allow time for the worker to zip the world
+            timeout=300
+            # Allow time for the worker to zip the world
         )
 
         return jsonify(response.json()), response.status_code
